@@ -1,0 +1,185 @@
+import gulp from 'gulp';
+import plumber from 'gulp-plumber';
+import sass from 'gulp-dart-sass';
+import postcss from 'gulp-postcss';
+import csso from 'postcss-csso';
+import rename from 'gulp-rename';
+import autoprefixer from 'autoprefixer';
+import htmlmin from 'gulp-htmlmin';
+import include from 'gulp-file-include';
+import terser from 'gulp-terser';
+import squoosh from 'gulp-libsquoosh';
+import svgo from 'gulp-svgmin';
+import svgstore from 'gulp-svgstore';
+import del from 'del';
+import browser from 'browser-sync';
+
+// gulp - таск менеджер
+// gulp-plumber - при ошибке в scss сборка не падает
+// gulp-dart-sass - трансформирует scss в css
+// gulp-postcss - для того чтобы заработал autoprefixer и минификатор css
+// postcss-csso - минификация css
+// gulp-rename - переименовывает файлы
+// autoprefixer - раставляет префиксы
+// gulp-htmlmin - минификация html
+// gulp-file-include - позволяет вкладывать файлы друг в друга
+// gulp-terser - минификация java script
+// gulp-libsquoosh - оптимизация растровой графики
+// gulp-svgmin - оптимизация векторной графики
+// gulp-svgstore - создание sprit
+// del - удаляет файлы
+// browser-sync - live server
+
+
+// Styles
+export const styles = () => {
+  return gulp.src('source/sass/style.scss', { sourcemaps: true })
+    .pipe(plumber())
+    .pipe(sass().on('error', sass.logError))
+    .pipe(postcss([
+      autoprefixer(),
+      csso()
+    ]))
+    .pipe(rename('style.min.css'))
+    .pipe(gulp.dest('build/css', { sourcemaps: '.' }))
+    .pipe(browser.stream());
+}
+
+// HTML
+const html = () => {
+  return gulp.src('source/*.html')
+    .pipe(include({
+      prefix: '@@',
+      basepath: '@file'
+    }))
+    .pipe(htmlmin({ collapseWhitespace: true }))
+    .pipe(gulp.dest('build'));
+}
+
+// Scripts
+const scripts = () => {
+  return gulp.src('source/js/*.js')
+    .pipe(terser())
+    .pipe(rename({ suffix: '.min' }))
+    .pipe(gulp.dest('build/js'))
+    .pipe(browser.stream());
+}
+
+// Images
+const optimizeImages = () => {
+  return gulp.src('source/img/**/*.{jpg,png}')
+    .pipe(squoosh())
+    .pipe(gulp.dest('build/img'));
+}
+
+const copyImages = () => {
+  return gulp.src('source/img/**/*.{jpg,png}')
+    .pipe(gulp.dest('build/img'));
+}
+
+// WebP
+const createWebp = () => {
+  return gulp.src(['source/img/**/*.{png,jpg}', '!source/img/favicon/*.{png,jpg}'])
+    .pipe(squoosh({
+      webp: {}
+    }))
+    .pipe(gulp.dest('build/img'));
+}
+
+// SVG
+const svg = () => {
+  return gulp.src(['source/img/**/*.svg', '!source/img/*/sprite/*.svg'])
+    .pipe(svgo())
+    .pipe(gulp.dest('build/img'));
+}
+
+const sprite = () => {
+  return gulp.src('source/img/*/sprite/*.svg')
+    .pipe(svgo())
+    .pipe(svgstore({
+      inlineSvg: true
+    }))
+    .pipe(rename('sprite.svg'))
+    .pipe(gulp.dest('build/img/sprite'));
+}
+
+// Copy
+const copy = (done) => {
+  return gulp.src([
+    'source/fonts/*.{woff2,woff}',
+    'source/*.ico',
+    'source/*.webmanifest'
+  ], {
+    base: 'source'
+  })
+    .pipe(gulp.dest('build'));
+  done();
+}
+
+// Clean
+const clean = () => {
+  return del('build');
+}
+
+// Server
+const server = (done) => {
+  browser.init({
+    server: {
+      baseDir: 'build'
+    },
+    cors: true,
+    notify: false,
+    ui: false,
+  });
+  done();
+}
+
+// Reload
+const reload = (done) => {
+  browser.reload();
+  done();
+}
+
+// Watcher
+const watcher = () => {
+  gulp.watch('source/sass/**/*.scss', gulp.series(styles));
+  gulp.watch('source/js/*.js', gulp.series(scripts));
+  gulp.watch('source/**/*.html', gulp.series(html, reload));
+}
+
+// Default
+export default gulp.series(
+  clean,
+  copy,
+  copyImages,
+
+  gulp.parallel(
+    styles,
+    html,
+    scripts,
+    svg,
+    sprite,
+    createWebp
+  ),
+
+  gulp.series(
+    server,
+    watcher
+  )
+);
+
+// Build
+export const build = gulp.series(
+  clean,
+  copy,
+  optimizeImages,
+
+  gulp.parallel(
+    styles,
+    html,
+    scripts,
+    svg,
+    sprite,
+    createWebp
+  )
+);
